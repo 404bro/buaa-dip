@@ -257,7 +257,7 @@ class MainWindow(QMainWindow):
         image_menu = self.menuBar().addMenu("图像(&I)")
 
         adjustment_menu = image_menu.addMenu("调整")
-        adjustment_menu.addAction(self.add_brightness_action)
+        # adjustment_menu.addAction(self.add_brightness_action)
         adjustment_menu.addAction(self.invert_action)
         adjustment_menu.addAction(self.he_action)
         adjustment_menu.addAction(self.gamma_action)
@@ -329,11 +329,18 @@ class MainWindow(QMainWindow):
             self.redo_action.setEnabled(False)
 
         edit_actions = [
-            self.add_image_action,
-            self.sift_match_action,
-            self.homomorphic_action,
+            # self.add_brightness_action,
+            self.invert_action,
+            self.he_action,
             self.gamma_action,
+            self.h_flip_action,
+            self.v_flip_action,
+            self.rotate90_cw_action,
+            self.rotate90_ccw_action,
+            self.rotate180_action,
+            self.translate_action,
             self.laplacian_sharpen_action,
+            self.homomorphic_action,
             self.roberts_action,
             self.prewitt_action,
             self.sobel_action,
@@ -343,6 +350,8 @@ class MainWindow(QMainWindow):
             self.show_fft_action,
             self.fft_conj_rot_action,
             self.fourier_descriptors_action,
+            self.add_image_action,
+            self.sift_match_action,
         ]
         for action in edit_actions:
             action.setEnabled(has_widget)
