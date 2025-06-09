@@ -216,27 +216,6 @@ def sift_match(image1: Image.Image, image2: Image.Image) -> Image.Image:
     return Image.fromarray(cv2.cvtColor(match_img, cv2.COLOR_BGR2RGB))
 
 
-def fft_transform_display(image: Image.Image) -> Image.Image:
-
-    # Step 1 & 2
-    img_gray = image.convert("L")
-    img_array = np.array(img_gray)
-    f_transform = fft.fft2(img_array)
-    f_transform_shifted = fft.fftshift(f_transform)
-
-    # Step 3
-    magnitude_spectrum = np.abs(f_transform_shifted)
-    log_spectrum = np.log(1 + magnitude_spectrum)
-    min_val, max_val = np.min(log_spectrum), np.max(log_spectrum)
-    if max_val == min_val:
-        return Image.fromarray(np.uint8(log_spectrum))
-
-    spectrum_visual = (log_spectrum - min_val) / (max_val - min_val)
-    spectrum_visual = np.uint8(spectrum_visual * 255)
-
-    return Image.fromarray(spectrum_visual)
-
-
 def fft_conjugate_rotation(image: Image.Image) -> Image.Image:
     img_gray = image.convert("L")
     img_array = np.array(img_gray, dtype=np.float64)
@@ -314,3 +293,61 @@ def reconstruct_with_fourier_descriptors(
     )
 
     return Image.fromarray(cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB))
+
+
+def ifft_transform(image: Image.Image) -> Image.Image:
+    img_gray = image.convert("L")
+    magnitude_spectrum = np.array(img_gray, dtype=np.float64)
+
+    f_ishift = fft.ifftshift(magnitude_spectrum)
+
+    img_back = fft.ifft2(f_ishift)
+
+    img_back_real = np.abs(img_back)
+
+    min_val, max_val = np.min(img_back_real), np.max(img_back_real)
+    if max_val == min_val:
+        return Image.fromarray(np.uint8(img_back_real))
+
+    img_back_normalized = (img_back_real - min_val) / (max_val - min_val)
+    img_back_uint8 = np.uint8(img_back_normalized * 255)
+
+    return Image.fromarray(img_back_uint8)
+
+
+def fft_transform_and_get_complex(image: Image.Image) -> tuple[Image.Image, np.ndarray]:
+    img_gray = image.convert("L")
+    img_array = np.array(img_gray)
+
+    f_transform = fft.fft2(img_array)
+    f_transform_shifted = fft.fftshift(f_transform)
+
+    magnitude_spectrum = np.abs(f_transform_shifted)
+    log_spectrum = np.log(1 + magnitude_spectrum)
+
+    min_val, max_val = np.min(log_spectrum), np.max(log_spectrum)
+    if max_val > min_val:
+        spectrum_visual = (log_spectrum - min_val) / (max_val - min_val)
+        spectrum_visual = np.uint8(spectrum_visual * 255)
+    else:
+        spectrum_visual = np.uint8(log_spectrum)
+
+    visual_image = Image.fromarray(spectrum_visual)
+
+    # 返回可视化图像和包含幅度和相位的原始复数数据
+    return visual_image, f_transform_shifted
+
+
+# 新增函数：从复数数据进行反变换
+def ifft_from_complex(complex_fft_data: np.ndarray) -> Image.Image:
+    # 将频谱移回原始位置（四个角是低频）
+    f_ishift = fft.ifftshift(complex_fft_data)
+
+    # 执行反变换
+    img_back = fft.ifft2(f_ishift)
+
+    # 取实部并裁剪到0-255范围
+    img_back_real = np.real(img_back)
+    img_back_clipped = np.clip(img_back_real, 0, 255)
+
+    return Image.fromarray(img_back_clipped.astype(np.uint8))

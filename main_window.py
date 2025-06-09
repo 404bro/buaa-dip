@@ -18,6 +18,7 @@ from PySide6.QtGui import (
     QShowEvent,
 )
 from PySide6.QtCore import Qt
+import numpy as np
 
 from image_widget import ImageWidget
 from commands import EditCommand
@@ -90,6 +91,8 @@ class MainWindow(QMainWindow):
         self.tab_widget.tabCloseRequested.connect(self.close_tab)
         self.tab_widget.currentChanged.connect(self.update_actions_state)
         self.setCentralWidget(self.tab_widget)
+
+        self.last_fft_result: np.ndarray | None = None
 
         self.create_actions()
         self.create_menus()
@@ -224,6 +227,10 @@ class MainWindow(QMainWindow):
         self.show_fft_action = QAction(
             "显示频谱 (FFT)", self, triggered=self.show_fft_spectrum
         )
+        self.ifft_action = QAction(
+            "从频谱恢复 (IFFT)", self, triggered=self.apply_ifft_from_memory
+        )
+        self.ifft_action.setEnabled(False)
         self.fft_conj_rot_action = QAction(
             "共轭旋转 (a-e步骤)",
             self,
@@ -290,8 +297,8 @@ class MainWindow(QMainWindow):
 
         fft_menu = self.menuBar().addMenu("傅里叶(&T)")
         fft_menu.addAction(self.show_fft_action)
+        fft_menu.addAction(self.ifft_action)
         fft_menu.addAction(self.fft_conj_rot_action)
-        fft_menu.addSeparator()
         fft_menu.addAction(self.fourier_descriptors_action)
 
         tools_menu = self.menuBar().addMenu("二元操作(&B)")
@@ -310,6 +317,10 @@ class MainWindow(QMainWindow):
 
         self.save_action.setEnabled(has_widget)
         self.save_as_action.setEnabled(has_widget)
+        self.show_fft_action.setEnabled(has_widget)
+        self.ifft_action.setEnabled(self.last_fft_result is not None)
+        self.fft_conj_rot_action.setEnabled(has_widget)
+        self.fourier_descriptors_action.setEnabled(has_widget)
 
         try:
             self.undo_action.triggered.disconnect()
@@ -348,6 +359,7 @@ class MainWindow(QMainWindow):
             self.dilate_action,
             self.erode_action,
             self.show_fft_action,
+            self.ifft_action,
             self.fft_conj_rot_action,
             self.fourier_descriptors_action,
             self.add_image_action,
@@ -535,29 +547,6 @@ class MainWindow(QMainWindow):
         if ok:
             self.apply_edit(image_processor.gamma_correction, "Gamma变换", gamma=gamma)
 
-    def show_fft_spectrum(self):
-        widget = self.get_current_widget()
-        if not widget:
-            return
-
-        try:
-            pil_image = qpixmap_to_pillow(widget.original_pixmap)
-
-            QApplication.setOverrideCursor(Qt.WaitCursor)
-            spectrum_pil_image = image_processor.fft_transform_display(pil_image)
-            QApplication.restoreOverrideCursor()
-
-            spectrum_qimage = pillow_to_qimage(spectrum_pil_image)
-            spectrum_pixmap = QPixmap.fromImage(spectrum_qimage)
-
-            dialog = ResultDialog(spectrum_pixmap, self)
-            dialog.setWindowTitle("FFT 幅度谱")
-            dialog.exec()
-
-        except Exception as e:
-            QApplication.restoreOverrideCursor()
-            QMessageBox.critical(self, "FFT频谱显示错误", f"处理过程中发生错误: {e}")
-
     def reconstruct_from_descriptors(self):
         widget = self.get_current_widget()
         if not widget:
@@ -581,3 +570,54 @@ class MainWindow(QMainWindow):
                 )
             except Exception as e:
                 QMessageBox.critical(self, "重构失败", f"处理过程中发生错误: {e}")
+
+    def show_fft_spectrum(self):
+        widget = self.get_current_widget()
+        if not widget:
+            return
+
+        try:
+            pil_image = qpixmap_to_pillow(widget.original_pixmap)
+
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            visual_spectrum, complex_data = (
+                image_processor.fft_transform_and_get_complex(pil_image)
+            )
+            QApplication.restoreOverrideCursor()
+
+            self.last_fft_result = complex_data
+
+            self.update_actions_state()
+
+            spectrum_qimage = pillow_to_qimage(visual_spectrum)
+            spectrum_pixmap = QPixmap.fromImage(spectrum_qimage)
+
+            dialog = ResultDialog(spectrum_pixmap, self)
+            dialog.setWindowTitle("FFT 幅度谱")
+            dialog.exec()
+
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            self.last_fft_result = None
+            self.update_actions_state()
+            QMessageBox.critical(self, "FFT频谱显示错误", f"处理过程中发生错误: {e}")
+
+    def apply_ifft_from_memory(self):
+        if self.last_fft_result is None:
+            QMessageBox.warning(
+                self,
+                "操作无效",
+                "没有可用的FFT数据。请先对一张图片执行“显示频谱 (FFT)”。",
+            )
+            return
+
+        widget = self.get_current_widget()
+        if not widget:
+            return
+
+        operation_func = lambda img, data: image_processor.ifft_from_complex(data)
+
+        command = EditCommand(
+            widget, operation_func, "从频谱恢复", self.last_fft_result
+        )
+        widget.undo_stack.push(command)
